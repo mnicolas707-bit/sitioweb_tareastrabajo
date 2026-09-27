@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "ordenes-avisos-v1";
+const CACHE_NAME = "ordenes-avisos-v2";
 const APP_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (event) => {

@@ -41,7 +41,9 @@
     .task { background: #fff; border: 1px solid #dce4ee; border-left: 5px solid #198754; border-radius: 10px; padding: 17px; box-shadow: 0 2px 8px #1834510a; }
     .task.incomplete { border-left-color: #dc3545; }
     .task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-    .task h2 { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; }
+    .task h2 { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.1rem; }
+    .task-title { color: #142b4a; }
+    .task-detail { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .fields { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 14px; color: #526174; font-size: .9rem; }
     .fields strong { color: #263c56; }
     .badge { display: inline-block; border-radius: 20px; padding: 2px 9px; background: #edf1f5; color: #34465c; }
@@ -76,7 +78,7 @@
   </header>
   <main>
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Buscar por detalle, OT o aviso" aria-label="Buscar tareas">
+      <input id="search" type="search" placeholder="Buscar por título, detalle, OT o aviso" aria-label="Buscar tareas">
       <button id="export" class="button button-quiet" type="button">Exportar copia</button>
       <button id="import" class="button button-quiet" type="button">Importar copia</button>
       <input id="import-file" type="file" accept="application/json,.json">
@@ -94,6 +96,9 @@
         <button class="close-button" type="button" id="close-dialog" aria-label="Cerrar">×</button>
       </div>
       <div class="dialog-body">
+        <label for="task-title">Título de la tarea *
+          <input id="task-title" name="title" required maxlength="200" placeholder="Ej.: Inspección de equipo">
+        </label>
         <label for="detail">Detalle del trabajo *
           <textarea id="detail" name="detail" required maxlength="2000" placeholder="Descripción de la tarea…"></textarea>
         </label>
@@ -141,10 +146,13 @@
       }
 
       function isTask(value) {
-        return value && typeof value.id === "string" &&
+        return value !== null && typeof value === "object" && !Array.isArray(value) &&
+          typeof value.id === "string" &&
           ["detail", "workOrder", "noticeNumber", "noticeClass"].every(
             (key) => typeof value[key] === "string"
-          );
+          ) &&
+          (!Object.prototype.hasOwnProperty.call(value, "title") ||
+            typeof value.title === "string");
       }
 
       function saveTasks() {
@@ -174,7 +182,7 @@
       function render() {
         const query = search.value.trim().toLocaleLowerCase("es");
         const visible = tasks.filter((task) =>
-          [task.detail, task.workOrder, task.noticeNumber, task.noticeClass]
+          [task.title || "", task.detail, task.workOrder, task.noticeNumber, task.noticeClass]
             .some((value) => value.toLocaleLowerCase("es").includes(query))
         );
         taskList.replaceChildren();
@@ -195,12 +203,18 @@
           const head = document.createElement("div");
           head.className = "task-head";
           const title = document.createElement("h2");
-          title.textContent = task.detail;
+          title.className = "task-title";
+          title.textContent = task.title || "Sin título (registro anterior)";
+          const detail = document.createElement("p");
+          detail.className = "task-detail";
+          const detailLabel = document.createElement("strong");
+          detailLabel.textContent = "Detalle del trabajo: ";
+          detail.append(detailLabel, document.createTextNode(task.detail));
           const remove = document.createElement("button");
           remove.type = "button";
           remove.className = "button button-danger";
           remove.textContent = "Eliminar";
-          remove.setAttribute("aria-label", `Eliminar tarea: ${task.detail.slice(0, 70)}`);
+          remove.setAttribute("aria-label", `Eliminar tarea: ${(task.title || task.detail).slice(0, 70)}`);
           remove.addEventListener("click", () => {
             const incomplete = !task.workOrder || !task.noticeNumber;
             const message = incomplete
@@ -218,7 +232,7 @@
           addField(fields, "N.º OT", task.workOrder, !task.workOrder);
           addField(fields, "N.º Aviso", task.noticeNumber, !task.noticeNumber);
           addField(fields, "Clase de aviso", task.noticeClass || "N/A", false);
-          card.append(head, fields);
+          card.append(head, detail, fields);
           taskList.append(card);
         }
       }
@@ -233,13 +247,19 @@
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const data = new FormData(form);
+        const title = String(data.get("title") || "").trim();
         const detail = String(data.get("detail") || "").trim();
+        if (!title) {
+          document.querySelector("#task-title").focus();
+          return;
+        }
         if (!detail) {
           document.querySelector("#detail").focus();
           return;
         }
         tasks.unshift({
           id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          title,
           detail,
           workOrder: String(data.get("work-order") || "").trim(),
           noticeNumber: String(data.get("notice-number") || "").trim(),
