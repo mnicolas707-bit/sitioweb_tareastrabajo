@@ -1,0 +1,19 @@
+{
+  "name": "Órdenes y Avisos",
+  "short_name": "Órdenes",
+  "description": "Gestor de órdenes y avisos disponible sin conexión.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6fa",
+  "theme_color": "#142b4a",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

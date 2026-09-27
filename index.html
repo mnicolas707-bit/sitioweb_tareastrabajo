@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142b4a">
+  <meta name="description" content="Gestor de órdenes y avisos que funciona sin conexión.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <title>Órdenes y Avisos</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: #172b45;
+      background: #f3f6fa;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .topbar { background: #142b4a; color: #fff; }
+    .topbar-inner, main { width: min(100% - 32px, 920px); margin: 0 auto; }
+    .topbar-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { margin: 0; font-size: clamp(1.2rem, 4vw, 1.65rem); }
+    .connection { color: #c8d7e8; font-size: .82rem; white-space: nowrap; }
+    main { padding: 28px 0 48px; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .toolbar input { flex: 1 1 220px; }
+    .button { border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 650; }
+    .button-primary { color: #fff; background: #1769c2; }
+    .button-primary:hover { background: #1058a5; }
+    .button-quiet { color: #173c65; background: #e4edf7; }
+    .button-danger { color: #a52332; background: #fff; border: 1px solid #e2aab0; padding: 7px 10px; }
+    .button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #79b7ff; outline-offset: 2px; }
+    input, textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 7px; padding: 10px 11px; background: #fff; color: inherit; }
+    textarea { resize: vertical; min-height: 94px; }
+    .summary { color: #5c6b7d; font-size: .9rem; margin: 0 0 12px; }
+    .task-list { display: grid; gap: 12px; }
+    .task { background: #fff; border: 1px solid #dce4ee; border-left: 5px solid #198754; border-radius: 10px; padding: 17px; box-shadow: 0 2px 8px #1834510a; }
+    .task.incomplete { border-left-color: #dc3545; }
+    .task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .task h2 { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.05rem; }
+    .fields { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 14px; color: #526174; font-size: .9rem; }
+    .fields strong { color: #263c56; }
+    .badge { display: inline-block; border-radius: 20px; padding: 2px 9px; background: #edf1f5; color: #34465c; }
+    .badge.missing { background: #fbe8e9; color: #a52332; }
+    .empty { border: 1px dashed #bdc9d7; border-radius: 10px; padding: 34px 16px; text-align: center; color: #627286; }
+    dialog { width: min(100% - 28px, 500px); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 18px 60px #10243d40; }
+    dialog::backdrop { background: #0c1e33a6; }
+    .dialog-head, .dialog-body, .dialog-actions { padding: 18px 20px; }
+    .dialog-head { border-bottom: 1px solid #e5eaf0; display: flex; justify-content: space-between; align-items: center; }
+    .dialog-head h2 { margin: 0; font-size: 1.15rem; }
+    .dialog-body { display: grid; gap: 14px; }
+    .dialog-body label { display: grid; gap: 6px; font-weight: 600; font-size: .92rem; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e5eaf0; }
+    .close-button { border: 0; background: transparent; color: #53657a; font-size: 1.5rem; }
+    .notice { color: #617187; font-size: .82rem; margin: 22px 0 0; }
+    #import-file { display: none; }
+    @media (max-width: 500px) {
+      .topbar-inner, main { width: min(100% - 22px, 920px); }
+      .topbar-inner { min-height: 66px; }
+      main { padding-top: 18px; }
+      .toolbar .button { flex: 1 1 auto; }
+      .task { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>Órdenes y Avisos</h1>
+      <span id="connection" class="connection" role="status">Comprobando conexión…</span>
+    </div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Buscar por detalle, OT o aviso" aria-label="Buscar tareas">
+      <button id="export" class="button button-quiet" type="button">Exportar copia</button>
+      <button id="import" class="button button-quiet" type="button">Importar copia</button>
+      <input id="import-file" type="file" accept="application/json,.json">
+      <button id="add" class="button button-primary" type="button">+ Agregar tarea</button>
+    </div>
+    <p id="summary" class="summary" aria-live="polite"></p>
+    <section id="task-list" class="task-list" aria-label="Lista de tareas"></section>
+    <p class="notice">Los datos se guardan en este navegador y dispositivo. Exportá una copia para transferirlos o conservar un respaldo.</p>
+  </main>
+
+  <dialog id="task-dialog" aria-labelledby="dialog-title">
+    <form id="task-form">
+      <div class="dialog-head">
+        <h2 id="dialog-title">Nueva tarea</h2>
+        <button class="close-button" type="button" id="close-dialog" aria-label="Cerrar">×</button>
+      </div>
+      <div class="dialog-body">
+        <label for="detail">Detalle del trabajo *
+          <textarea id="detail" name="detail" required maxlength="2000" placeholder="Descripción de la tarea…"></textarea>
+        </label>
+        <label for="work-order">Número de Orden de Trabajo (OT)
+          <input id="work-order" name="work-order" maxlength="100" placeholder="Ej.: 4001234">
+        </label>
+        <label for="notice-number">Número de Aviso
+          <input id="notice-number" name="notice-number" maxlength="100" placeholder="Ej.: 1009876">
+        </label>
+        <label for="notice-class">Clase de Aviso
+          <input id="notice-class" name="notice-class" maxlength="100" placeholder="Ej.: M1, M2, N1">
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button class="button button-quiet" type="button" id="cancel-dialog">Cancelar</button>
+        <button class="button button-primary" type="submit">Guardar tarea</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const STORAGE_KEY = "ordenes-avisos-v1";
+      const taskList = document.querySelector("#task-list");
+      const search = document.querySelector("#search");
+      const dialog = document.querySelector("#task-dialog");
+      const form = document.querySelector("#task-form");
+      let tasks = loadTasks();
+
+      function loadTasks() {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (!saved) return [];
+          const parsed = JSON.parse(saved);
+          if (!Array.isArray(parsed) || !parsed.every(isTask)) {
+            throw new Error("El contenido guardado no tiene el formato esperado.");
+          }
+          return parsed;
+        } catch (error) {
+          showError(`No se pudieron cargar las tareas: ${error.message}`);
+          return [];
+        }
+      }
+
+      function isTask(value) {
+        return value && typeof value.id === "string" &&
+          ["detail", "workOrder", "noticeNumber", "noticeClass"].every(
+            (key) => typeof value[key] === "string"
+          );
+      }
+
+      function saveTasks() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+          render();
+        } catch (error) {
+          showError(`No se pudieron guardar los cambios: ${error.message}`);
+        }
+      }
+
+      function showError(message) {
+        window.alert(message);
+      }
+
+      function addField(container, label, value, missing) {
+        const item = document.createElement("span");
+        const title = document.createElement("strong");
+        title.textContent = `${label}: `;
+        const badge = document.createElement("span");
+        badge.className = `badge${missing ? " missing" : ""}`;
+        badge.textContent = value || "Sin asignar";
+        item.append(title, badge);
+        container.append(item);
+      }
+
+      function render() {
+        const query = search.value.trim().toLocaleLowerCase("es");
+        const visible = tasks.filter((task) =>
+          [task.detail, task.workOrder, task.noticeNumber, task.noticeClass]
+            .some((value) => value.toLocaleLowerCase("es").includes(query))
+        );
+        taskList.replaceChildren();
+        document.querySelector("#summary").textContent =
+          `${visible.length} de ${tasks.length} ${tasks.length === 1 ? "tarea" : "tareas"}`;
+
+        if (visible.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = tasks.length ? "No hay tareas que coincidan con la búsqueda." : "Todavía no hay tareas. Agregá una para comenzar.";
+          taskList.append(empty);
+          return;
+        }
+
+        for (const task of visible) {
+          const card = document.createElement("article");
+          card.className = `task${!task.workOrder || !task.noticeNumber ? " incomplete" : ""}`;
+          const head = document.createElement("div");
+          head.className = "task-head";
+          const title = document.createElement("h2");
+          title.textContent = task.detail;
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "button button-danger";
+          remove.textContent = "Eliminar";
+          remove.setAttribute("aria-label", `Eliminar tarea: ${task.detail.slice(0, 70)}`);
+          remove.addEventListener("click", () => {
+            const incomplete = !task.workOrder || !task.noticeNumber;
+            const message = incomplete
+              ? "Esta tarea no tiene una OT o un aviso asignado. ¿Seguro que querés eliminarla?"
+              : "¿Confirmás que querés eliminar esta tarea?";
+            if (window.confirm(message)) {
+              tasks = tasks.filter((item) => item.id !== task.id);
+              saveTasks();
+            }
+          });
+          head.append(title, remove);
+
+          const fields = document.createElement("div");
+          fields.className = "fields";
+          addField(fields, "N.º OT", task.workOrder, !task.workOrder);
+          addField(fields, "N.º Aviso", task.noticeNumber, !task.noticeNumber);
+          addField(fields, "Clase de aviso", task.noticeClass || "N/A", false);
+          card.append(head, fields);
+          taskList.append(card);
+        }
+      }
+
+      document.querySelector("#add").addEventListener("click", () => {
+        form.reset();
+        dialog.showModal();
+        document.querySelector("#detail").focus();
+      });
+      document.querySelector("#close-dialog").addEventListener("click", () => dialog.close());
+      document.querySelector("#cancel-dialog").addEventListener("click", () => dialog.close());
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const detail = String(data.get("detail") || "").trim();
+        if (!detail) {
+          document.querySelector("#detail").focus();
+          return;
+        }
+        tasks.unshift({
+          id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+          detail,
+          workOrder: String(data.get("work-order") || "").trim(),
+          noticeNumber: String(data.get("notice-number") || "").trim(),
+          noticeClass: String(data.get("notice-class") || "").trim()
+        });
+        saveTasks();
+        dialog.close();
+      });
+      search.addEventListener("input", render);
+
+      document.querySelector("#export").addEventListener("click", () => {
+        const file = new Blob([JSON.stringify(tasks, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(file);
+        link.download = `ordenes-avisos-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      });
+      const importFile = document.querySelector("#import-file");
+      document.querySelector("#import").addEventListener("click", () => importFile.click());
+      importFile.addEventListener("change", async () => {
+        const [file] = importFile.files || [];
+        if (!file) return;
+        try {
+          const imported = JSON.parse(await file.text());
+          if (!Array.isArray(imported) || !imported.every(isTask)) {
+            throw new Error("El archivo no contiene una copia válida de tareas.");
+          }
+          if (window.confirm(`Se reemplazarán las ${tasks.length} tareas actuales por ${imported.length} del archivo. ¿Continuar?`)) {
+            tasks = imported;
+            saveTasks();
+          }
+        } catch (error) {
+          showError(`No se pudo importar el archivo: ${error.message}`);
+        } finally {
+          importFile.value = "";
+        }
+      });
+
+      function updateConnection() {
+        document.querySelector("#connection").textContent =
+          navigator.onLine ? "Con conexión" : "Sin conexión · modo local";
+      }
+      window.addEventListener("online", updateConnection);
+      window.addEventListener("offline", updateConnection);
+      updateConnection();
+      render();
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js")
+            .then(() => navigator.serviceWorker.ready)
+            .then(() => {
+              if (navigator.onLine) {
+                document.querySelector("#connection").textContent = "App disponible sin conexión";
+              }
+            })
+            .catch((error) => {
+              console.error("No se pudo activar el modo sin conexión:", error);
+              document.querySelector("#connection").textContent =
+                navigator.onLine ? "Con conexión · modo local" : "Sin conexión · modo local";
+            });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
