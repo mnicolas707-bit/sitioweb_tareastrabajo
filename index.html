@@ -44,6 +44,7 @@
     .task h2 { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.1rem; }
     .task-title { color: #142b4a; }
     .task-detail { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .task-actions { display: flex; flex: 0 0 auto; gap: 8px; }
     .fields { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 14px; color: #526174; font-size: .9rem; }
     .fields strong { color: #263c56; }
     .badge { display: inline-block; border-radius: 20px; padding: 2px 9px; background: #edf1f5; color: #34465c; }
@@ -66,6 +67,8 @@
       main { padding-top: 18px; }
       .toolbar .button { flex: 1 1 auto; }
       .task { padding: 14px; }
+      .task-head { flex-wrap: wrap; }
+      .task-actions { margin-left: auto; }
     }
   </style>
 </head>
@@ -114,7 +117,7 @@
       </div>
       <div class="dialog-actions">
         <button class="button button-quiet" type="button" id="cancel-dialog">Cancelar</button>
-        <button class="button button-primary" type="submit">Guardar tarea</button>
+        <button id="save-task" class="button button-primary" type="submit">Guardar tarea</button>
       </div>
     </form>
   </dialog>
@@ -128,6 +131,9 @@
       const search = document.querySelector("#search");
       const dialog = document.querySelector("#task-dialog");
       const form = document.querySelector("#task-form");
+      const dialogTitle = document.querySelector("#dialog-title");
+      const saveTaskButton = document.querySelector("#save-task");
+      let editingTaskId = null;
       let tasks = loadTasks();
 
       function loadTasks() {
@@ -155,12 +161,15 @@
             typeof value.title === "string");
       }
 
-      function saveTasks() {
+      function saveTasks(updatedTasks = tasks) {
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedTasks));
+          tasks = updatedTasks;
           render();
+          return true;
         } catch (error) {
           showError(`No se pudieron guardar los cambios: ${error.message}`);
+          return false;
         }
       }
 
@@ -210,6 +219,14 @@
           const detailLabel = document.createElement("strong");
           detailLabel.textContent = "Detalle del trabajo: ";
           detail.append(detailLabel, document.createTextNode(task.detail));
+          const actions = document.createElement("div");
+          actions.className = "task-actions";
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.className = "button button-quiet";
+          edit.textContent = "Editar";
+          edit.setAttribute("aria-label", `Editar tarea: ${(task.title || task.detail).slice(0, 70)}`);
+          edit.addEventListener("click", () => openEditDialog(task));
           const remove = document.createElement("button");
           remove.type = "button";
           remove.className = "button button-danger";
@@ -221,11 +238,11 @@
               ? "Esta tarea no tiene una OT o un aviso asignado. ¿Seguro que querés eliminarla?"
               : "¿Confirmás que querés eliminar esta tarea?";
             if (window.confirm(message)) {
-              tasks = tasks.filter((item) => item.id !== task.id);
-              saveTasks();
+              saveTasks(tasks.filter((item) => item.id !== task.id));
             }
           });
-          head.append(title, remove);
+          actions.append(edit, remove);
+          head.append(title, actions);
 
           const fields = document.createElement("div");
           fields.className = "fields";
@@ -237,10 +254,33 @@
         }
       }
 
-      document.querySelector("#add").addEventListener("click", () => {
+      function openCreateDialog() {
+        editingTaskId = null;
         form.reset();
+        dialogTitle.textContent = "Nueva tarea";
+        saveTaskButton.textContent = "Guardar tarea";
         dialog.showModal();
-        document.querySelector("#detail").focus();
+        document.querySelector("#task-title").focus();
+      }
+
+      function openEditDialog(task) {
+        editingTaskId = task.id;
+        document.querySelector("#task-title").value = task.title || "";
+        document.querySelector("#detail").value = task.detail;
+        document.querySelector("#work-order").value = task.workOrder;
+        document.querySelector("#notice-number").value = task.noticeNumber;
+        document.querySelector("#notice-class").value = task.noticeClass;
+        dialogTitle.textContent = "Editar tarea";
+        saveTaskButton.textContent = "Guardar cambios";
+        dialog.showModal();
+        document.querySelector("#task-title").focus();
+      }
+
+      document.querySelector("#add").addEventListener("click", openCreateDialog);
+      dialog.addEventListener("close", () => {
+        editingTaskId = null;
+        dialogTitle.textContent = "Nueva tarea";
+        saveTaskButton.textContent = "Guardar tarea";
       });
       document.querySelector("#close-dialog").addEventListener("click", () => dialog.close());
       document.querySelector("#cancel-dialog").addEventListener("click", () => dialog.close());
@@ -257,16 +297,28 @@
           document.querySelector("#detail").focus();
           return;
         }
-        tasks.unshift({
-          id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        const existingTask = editingTaskId === null
+          ? null
+          : tasks.find((item) => item.id === editingTaskId);
+        if (editingTaskId !== null && !existingTask) {
+          showError("No se encontró la tarea que intentás editar. Puede haber cambiado por una importación.");
+          return;
+        }
+        const task = {
+          ...(existingTask || {}),
+          id: existingTask
+            ? existingTask.id
+            : (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`),
           title,
           detail,
           workOrder: String(data.get("work-order") || "").trim(),
           noticeNumber: String(data.get("notice-number") || "").trim(),
           noticeClass: String(data.get("notice-class") || "").trim()
-        });
-        saveTasks();
-        dialog.close();
+        };
+        const updatedTasks = editingTaskId !== null
+          ? tasks.map((item) => item.id === editingTaskId ? task : item)
+          : [task, ...tasks];
+        if (saveTasks(updatedTasks)) dialog.close();
       });
       search.addEventListener("input", render);
 
@@ -289,8 +341,7 @@
             throw new Error("El archivo no contiene una copia válida de tareas.");
           }
           if (window.confirm(`Se reemplazarán las ${tasks.length} tareas actuales por ${imported.length} del archivo. ¿Continuar?`)) {
-            tasks = imported;
-            saveTasks();
+            saveTasks(imported);
           }
         } catch (error) {
           showError(`No se pudo importar el archivo: ${error.message}`);
